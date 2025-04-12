@@ -11,6 +11,10 @@ export default defineConfig({
       "Cross-Origin-Embedder-Policy": "require-corp",
       "Cross-Origin-Opener-Policy": "same-origin",
     },
+    fs: {
+      allow: [".."],
+    },
+    middlewareMode: false,
   },
   resolve: {
     alias: {
@@ -28,5 +32,17 @@ export default defineConfig({
         },
       ],
     }),
+    {
+      name: 'configure-response-headers',
+      configureServer: (server) => {
+        server.middlewares.use((req, res, next) => {
+          // Only set MIME type for .wasm files
+          if (req.url && req.url.endsWith('.wasm')) {
+            res.setHeader('Content-Type', 'application/wasm');
+          }
+          next();
+        });
+      }
+    }
   ],
 });

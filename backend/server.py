@@ -9,7 +9,7 @@ import uuid
 import requests
 from dotenv import load_dotenv
 
-from fastapi import FastAPI, HTTPException, Request, File, UploadFile
+from fastapi import FastAPI, HTTPException, Request, File, UploadFile, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
@@ -50,8 +50,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Create API router
+api_router = APIRouter(prefix="/api")
 
-@app.post("/create")
+
+@api_router.post("/create")
 async def create_room(request: Request) -> JSONResponse:
     body = await request.body()
     if body:
@@ -84,7 +87,7 @@ class StartAgentItem(BaseModel):
     voice_id: str
     custom_prompt: str | None
 
-@app.post("/start")
+@api_router.post("/start")
 async def start_agent(item: StartAgentItem, request: Request) -> JSONResponse:
     if item.room_url is None or item.token is None:
         raise HTTPException(status_code=400, detail="room_url and token are required")
@@ -105,7 +108,7 @@ async def start_agent(item: StartAgentItem, request: Request) -> JSONResponse:
     return JSONResponse({"bot_id": bot_id, "room_url": room_url})
 
 
-@app.get("/status/{bot_id}")
+@api_router.get("/status/{bot_id}")
 def get_bot_status(bot_id: str, request: Request):
     # Look up the machine/process
     if bot_id not in bot_machines:
@@ -119,7 +122,7 @@ def get_bot_status(bot_id: str, request: Request):
     return JSONResponse({"bot_id": bot_id, "status": status})
 
 
-@app.post("/clone_voice")
+@api_router.post("/clone_voice")
 async def clone_voice(voice_file: UploadFile = File(...)) -> JSONResponse:
     try:
 
@@ -158,6 +161,8 @@ async def clone_voice(voice_file: UploadFile = File(...)) -> JSONResponse:
         print(f"Error in clone_voice: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Include the API router
+app.include_router(api_router)
 
 if __name__ == "__main__":
     # Check environment variables

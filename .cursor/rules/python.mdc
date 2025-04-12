@@ -1,0 +1,7 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+When installing packages, always make sure you're in a venv called .venv.
+Never set the package versions when creating the requirements.txt, only write the package names.

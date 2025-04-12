@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDaily } from "@daily-co/daily-react";
 import { Ear } from "lucide-react";
+import * as DailyJs from "@daily-co/daily-js";
 
 import deeptrust from "./assets/logos/deeptrust.png";
 import MaintenancePage from "./components/MaintenancePage";
@@ -62,6 +63,11 @@ export default function App() {
   const [generatedPrompt, setGeneratedPrompt] = useState("");
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
   const [customError, setCustomError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Log the version of daily-js at runtime
+    console.log("Current daily-js version:", DailyJs.version);
+  }, []);
 
   async function start(selectedPrompt: string, redirect: boolean) {
     if (selectedPrompt === 'custom' && !customScenario.trim()) {
