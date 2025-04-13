@@ -100,12 +100,10 @@ async def main(room_url, token=None, xtts=False, elevenlabs=False, selected_prom
         )
 
         if xtts:
-            logging.info("Using XTTS")
-            tts_service = XTTSTerrify(
+            logging.info("Using ElevenLabs")
+            tts_service = ElevenLabsTerrify(
                 aiohttp_session=session,
-                voice_id="Claribel Dervla",
-                language="en",
-                base_url="https://deeptrust-ai-dev--xtts-xtts-web.modal.run",
+                api_key=os.getenv("ELEVENLABS_API_KEY"),
             )
         elif elevenlabs:
             logging.info("Using ElevenLabs")
@@ -114,8 +112,11 @@ async def main(room_url, token=None, xtts=False, elevenlabs=False, selected_prom
                 api_key=os.getenv("ELEVENLABS_API_KEY"),
             )
         else:
-            logging.info("Using Cartesia")
-            tts_service = CartesiaTerrify(selected_prompt=selected_prompt, voice_id=voice_id, custom_prompt=custom_prompt)
+            logging.info("Using ElevenLabs")
+            tts_service = ElevenLabsTerrify(
+                aiohttp_session=session,
+                api_key=os.getenv("ELEVENLABS_API_KEY"),
+            )
 
         # --------------- Setup ----------------- #
 
