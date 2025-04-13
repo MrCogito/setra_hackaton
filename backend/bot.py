@@ -1,3 +1,4 @@
+# backend/bot.py
 import argparse
 import asyncio
 import logging
@@ -32,13 +33,15 @@ from pipecat.services.openai import OpenAILLMService
 ## Transports
 from pipecat.transports.services.daily import DailyParams, DailyTransport
 
-from backend.helpers import get_daily_config
+# --- MODIFIED IMPORTS ---
+# Import helpers only if needed (e.g., for prompts, not get_daily_config anymore)
+# from backend.helpers import get_daily_config
 from backend.processors import (
-    CartesiaTerrify,
+    # CartesiaTerrify, # Removed
     DeepgramTerrify,
-    ElevenLabsTerrify,
+    ElevenLabsTerrify, # Keep only ElevenLabs
     TranscriptionLogger,
-    XTTSTerrify,
+    # XTTSTerrify, # Removed
 )
 from backend.prompts import (
     LLM_INTRO_PROMPT,
@@ -51,15 +54,16 @@ from backend.prompts import (
     LLM_VOICE_CHANGE_PROMPT_ENGINEERING_BREACH,
     LLM_VOICE_CHANGE_PROMPT_SECURITY_ALERT
 )
+# --- END MODIFIED IMPORTS ---
 
 load_dotenv()
 
-if os.environ.get("DEBUG"):
-    logging.basicConfig(level=logging.DEBUG)
-else:
-    logging.basicConfig(level=logging.INFO)
+# Logging Setup (use a specific name)
+log_level = logging.DEBUG if os.environ.get("DEBUG", "").lower() == "true" else logging.INFO
+logging.basicConfig(level=log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("bot")
 
-# voice change prompt map
+# Prompt mapping (as in original)
 PROMPT_MAP = {
     "default": LLM_VOICE_CHANGE_PROMPT_DEFAULT,
     "it_support": LLM_VOICE_CHANGE_PROMPT_IT_SUPPORT,
@@ -67,102 +71,89 @@ PROMPT_MAP = {
     "finance_fraud": LLM_VOICE_CHANGE_PROMPT_FINANCE_FRAUD,
     "engineering_breach": LLM_VOICE_CHANGE_PROMPT_ENGINEERING_BREACH,
     "security_alert": LLM_VOICE_CHANGE_PROMPT_SECURITY_ALERT,
-
 }
 
+# --- MODIFIED main signature ---
+# Removed xtts, elevenlabs flags as ElevenLabs is now mandatory
+async def main(room_url: str, token: str | None = None, selected_prompt: str = "default", voice_id: str = "", custom_prompt: str | None = None):
+# --- END MODIFIED main signature ---
+    logger.info(f"Starting bot for room: {room_url}")
+    logger.info(f"Selected prompt key: {selected_prompt}")
+    logger.info(f"Received Voice ID: '{voice_id}' (Type: {type(voice_id)})")
+    logger.info(f"Received Custom Prompt: {'Provided' if custom_prompt else 'None'}")
+    logger.info(f"Received Token: {'Provided' if token else 'None'}") # Log token presence
 
-async def main(room_url, token=None, xtts=False, elevenlabs=False, selected_prompt=None, voice_id="", custom_prompt=None):
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+    if not openai_api_key or not elevenlabs_api_key:
+        logger.error("Missing required API keys (OpenAI or ElevenLabs) in environment.")
+        return # Exit early
+
     async with aiohttp.ClientSession() as session:
         # -------------- Transport --------------- #
-
+        # Pass the received token to DailyTransport
         transport = DailyTransport(
             room_url,
-            token,
+            token, # Use the token passed as an argument
             "TerifAI",
             DailyParams(
-                # audio_in_enabled=True,
                 audio_out_enabled=True,
-                # transcription_enabled=True,
                 vad_enabled=True,
                 vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
                 vad_audio_passthrough=True,
             ),
         )
-
-        logging.info("Transport created for room:" + room_url)
+        logger.info(f"Transport created for room: {room_url}")
 
         # -------------- Services --------------- #
-
         stt_service = DeepgramTerrify()
+        llm_service = OpenAILLMService(api_key=openai_api_key, model="gpt-4o-mini")
 
-        llm_service = OpenAILLMService(
-            api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o-mini"
+        # --- MODIFIED: Always initialize ElevenLabsTerrify and pass voice_id ---
+        logger.info("Using ElevenLabs TTS")
+        logger.info(f"Initializing ElevenLabs TTS with provided voice_id: '{voice_id or 'None (will use default env)'}'")
+        tts_service = ElevenLabsTerrify(
+            aiohttp_session=session,
+            api_key=elevenlabs_api_key,
+            voice_id=voice_id # Pass the received voice_id here
         )
+        # --- END MODIFIED ---
 
-        if xtts:
-            logging.info("Using ElevenLabs")
-            tts_service = ElevenLabsTerrify(
-                aiohttp_session=session,
-                api_key=os.getenv("ELEVENLABS_API_KEY"),
-            )
-        elif elevenlabs:
-            logging.info("Using ElevenLabs")
-            tts_service = ElevenLabsTerrify(
-                aiohttp_session=session,
-                api_key=os.getenv("ELEVENLABS_API_KEY"),
-            )
-        else:
-            logging.info("Using ElevenLabs")
-            tts_service = ElevenLabsTerrify(
-                aiohttp_session=session,
-                api_key=os.getenv("ELEVENLABS_API_KEY"),
-            )
-
-        # --------------- Setup ----------------- #
-
-        if voice_id:
-            if selected_prompt == "custom":
-                LLM_START_PROMPT = {
-                    "role": "system",
-                    "content": custom_prompt
-                }
-                llm_base_prompt = LLM_PREUPLOAD_BASE_PROMPT
+        # --------------- Setup Prompts (logic is correct) ----------------- #
+        if voice_id: # If a specific voice_id was provided
+            llm_base_prompt = LLM_PREUPLOAD_BASE_PROMPT
+            if selected_prompt == "custom" and custom_prompt:
+                logger.info("Using provided custom prompt for initial message.")
+                LLM_START_PROMPT = {"role": "system", "content": custom_prompt}
+            elif selected_prompt in PROMPT_MAP:
+                logger.info(f"Using mapped prompt '{selected_prompt}' for initial message.")
+                LLM_START_PROMPT = {"role": "system", "content": PROMPT_MAP[selected_prompt]}
             else:
-                LLM_START_PROMPT = {
-                    "role": "system",
-                    "content": PROMPT_MAP[selected_prompt]
-                }
-                llm_base_prompt = LLM_PREUPLOAD_BASE_PROMPT
-        else:
-            LLM_START_PROMPT = LLM_INTRO_PROMPT
+                logger.warning(f"Voice ID provided, but selected_prompt '{selected_prompt}' is invalid. Falling back to default prompt.")
+                LLM_START_PROMPT = {"role": "system", "content": PROMPT_MAP["default"]}
+        else: # If no voice_id was provided
+            logger.info("No specific voice ID provided. Using introductory prompt and base prompt.")
             llm_base_prompt = LLM_BASE_PROMPT
+            LLM_START_PROMPT = LLM_INTRO_PROMPT
+
+        logger.debug(f"Using Base Prompt: {llm_base_prompt['content'][:100]}...")
+        logger.debug(f"Using Start Prompt: {LLM_START_PROMPT['content'][:100]}...")
 
         message_history = [llm_base_prompt]
-
-        # We need aggregators to keep track of user and LLM responses
         llm_responses = LLMAssistantResponseAggregator(message_history)
         user_responses = LLMUserResponseAggregator(message_history)
         transcription_logger = TranscriptionLogger()
 
-        # -------------- Pipeline ----------------- #
-
+        # -------------- Pipeline (logic is correct) ----------------- #
         pipeline = Pipeline(
             [
-                # Transport user input
                 transport.input(),
-                # STT
                 stt_service,
-                # Transcription logger
                 transcription_logger,
-                # User responses
                 user_responses,
-                # LLM
                 llm_service,
-                # TTS
-                tts_service,
-                # Transport bot output
+                tts_service, # Correct service instance
                 transport.output(),
-                # Assistant spoken responses
                 llm_responses,
             ]
         )
@@ -176,56 +167,81 @@ async def main(room_url, token=None, xtts=False, elevenlabs=False, selected_prom
             ),
         )
 
-        # --------------- Events ----------------- #
-
-        # When the first participant joins, the bot should introduce itself.
+        # --------------- Events (logic seems correct) ----------------- #
         @transport.event_handler("on_first_participant_joined")
         async def on_first_participant_joined(transport, participant):
-            # Kick off the conversation.
-            logging.info(f"Participant joined: {participant['id']}")
-            transport.capture_participant_transcription(participant["id"])
-            time.sleep(1)
+            logger.info(f"First participant joined: {participant.get('name', participant.get('id', 'Unknown'))}")
+            participant_id = participant.get("id")
+            if participant_id:
+                transport.capture_participant_transcription(participant_id)
+            else:
+                 logger.warning("First participant joined event missing participant ID.")
+            await asyncio.sleep(1.5) # Use asyncio.sleep
+            logger.info("Sending initial LLM message.")
             await task.queue_frame(LLMMessagesFrame([LLM_START_PROMPT]))
 
-        # When the participant leaves, we exit the bot.
         @transport.event_handler("on_participant_left")
         async def on_participant_left(transport, participant, reason):
-            logging.info(f"Participant left: {participant['id']}")
-            await task.queue_frame(EndFrame())
+            logger.info(f"Participant left: {participant.get('name', participant.get('id', 'Unknown'))}, Reason: {reason}")
+            participants = transport.participants()
+            local_participants = [p for p in participants.values() if not p.get("is_local", False)]
+            if len(local_participants) == 0:
+                 logger.info("Last non-local participant left. Ending session.")
+                 if task and not task.has_ended:
+                     await task.queue_frame(EndFrame())
+            else:
+                 logger.info(f"Other non-local participants remain: {len(local_participants)}")
 
-        # If the call is ended make sure we quit as well.
+
         @transport.event_handler("on_call_state_updated")
         async def on_call_state_updated(transport, state):
+            logger.info(f"Call state updated: {state}")
             if state == "left":
-                await task.queue_frame(EndFrame())
+                logger.info("Call state is 'left'. Ending session.")
+                if task and not task.has_ended:
+                     await task.queue_frame(EndFrame())
+                else:
+                     logger.warning("Task already stopped or not running when call state became 'left'.")
 
-        # --------------- Runner ----------------- #
-
+        # --------------- Runner (logic is correct) ----------------- #
         runner = PipelineRunner()
-
+        logger.info("Starting pipeline runner...")
         await runner.run(task)
+        logger.info("Pipeline runner finished.")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="TerifAI Bot")
-    parser.add_argument("--room_url", type=str, help="Room URL")
-    parser.add_argument("--token", type=str, help="Token")
-    parser.add_argument("--prompt", type=str, default="default", help="Specific Prompt")
-    parser.add_argument("--voice_id", type=str, default="", help="Voice ID")
-    parser.add_argument("--custom_prompt", type=str, default="", help="Custom Generated Prompt")
-    parser.add_argument("--default", action="store_true", help="Default configurations")
-    parser.add_argument("--xtts", action="store_true", help="Use XTTS")
-    parser.add_argument("--elevenlabs", action="store_true", help="Use ElevenLabs")
+    # --- MODIFIED Arguments ---
+    parser.add_argument("--room_url", type=str, required=True, help="Daily room URL") # Required
+    parser.add_argument("--token", type=str, help="Daily token (optional, passed by spawn)")
+    parser.add_argument("--prompt", type=str, default="default", help="Selected prompt key")
+    parser.add_argument("--voice_id", type=str, default="", help="Specific ElevenLabs Voice ID to use")
+    parser.add_argument("--custom_prompt", type=str, default=None, help="Full custom prompt text")
+    # Removed --default, --xtts, --elevenlabs flags
+    # --- END MODIFIED Arguments ---
     args = parser.parse_args()
-    room_url = args.room_url
-    token = args.token
 
-    if args.default:
-        config = get_daily_config()
-        room_url = config.room_url
-        token = config.token
+    # Removed --default logic block
 
-    if room_url is None:
-        raise ValueError("Room URL is required")
+    # Basic validation for custom prompt
+    if args.prompt == "custom" and not args.custom_prompt:
+        logger.warning("Selected prompt is 'custom' but --custom_prompt was not provided.")
 
-    asyncio.run(main(room_url, token, args.xtts, args.elevenlabs, args.prompt, args.voice_id, args.custom_prompt))
+    try:
+        # --- MODIFIED Call to main ---
+        # Pass arguments directly, removed flags
+        asyncio.run(main(
+            room_url=args.room_url,
+            token=args.token,
+            selected_prompt=args.prompt,
+            voice_id=args.voice_id,
+            custom_prompt=args.custom_prompt
+        ))
+        # --- END MODIFIED Call to main ---
+    except KeyboardInterrupt:
+        logger.info("Bot stopped manually.")
+    except Exception as e:
+        logger.error(f"Bot exited with error: {e}", exc_info=True)
+    finally:
+        logger.info("Bot shutdown complete.")

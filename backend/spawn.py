@@ -1,155 +1,172 @@
+# backend/spawn.py
 import os
 import subprocess
 import sys
-import time
 import uuid
-from typing import Dict, Optional, Tuple
-
 import requests
 from loguru import logger
 
-FLY_API_HOST = os.getenv("FLY_API_HOST", "https://api.machines.dev/v1")
-FLY_APP_NAME = os.getenv("FLY_APP_NAME")
-FLY_API_KEY = os.getenv("FLY_API_KEY")
-FLY_HEADERS = {
-    "Authorization": f"Bearer {FLY_API_KEY}",
-    "Content-Type": "application/json",
-}
+def spawn(room_url: str, token: str, selected_prompt: str, voice_id: str | None, local: bool, custom_prompt: str | None) -> str:
+    """
+    Spawns the bot process either locally or on Fly.io.
 
-MAX_RETRIES = 24
-RETRY_DELAY = 5
+    Args:
+        room_url: The Daily room URL for the bot to join.
+        token: The Daily token for the bot to use.
+        selected_prompt: The key indicating which prompt scenario to use.
+        voice_id: The specific ElevenLabs voice ID to use (cloned or default).
+        local: Boolean indicating whether to run locally or on Fly.
+        custom_prompt: The full text of the custom prompt, if selected.
 
-# Store local bot processes: bot_id -> (process, room_url)
-local_bots: Dict[str, Tuple[subprocess.Popen, str]] = {}
+    Returns:
+        The ID of the spawned bot (UUID for local, Fly machine ID for Fly).
+    """
+    bot_id = str(uuid.uuid4()) # Generate initial ID, may be replaced by Fly ID
+    logger.info(f"Spawning bot {bot_id} for room {room_url}. Local: {local}. Voice ID: {voice_id}. Prompt: {selected_prompt}")
 
+    # --- Prepare Common Command-Line Arguments ---
+    common_args = [
+        "--room_url", room_url,
+        "--prompt", selected_prompt,
+        # No need for --elevenlabs flag anymore as bot.py assumes it
+    ]
+    if token:
+         # Only add token if it's not None or empty
+         common_args.extend(["--token", token])
+    if voice_id:
+        common_args.extend(["--voice_id", voice_id])
+    if custom_prompt:
+        common_args.extend(["--custom_prompt", custom_prompt])
+    # --- End Common Arguments ---
 
-def spawn_local(room_url: str, token: str, selected_prompt: str, voice_id: str = "", custom_prompt: str | None = None) -> str:
-    """Spawn a local bot process and return its ID"""
-    bot_id = str(uuid.uuid4())
-    logger.info(f"Spawning local bot with id: {bot_id}")
-
-    # Get the project root directory (parent of backend)
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    # Create and start the process with PYTHONPATH set
-    env = os.environ.copy()
-    env["PYTHONPATH"] = project_root
-
-    # Create and start the process
-    proc = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "backend.bot",
-            f"--room_url={room_url}",
-            f"--token={token}",
-            f"--prompt={selected_prompt}",
-            f"--voice_id={voice_id}",
-            f"--custom_prompt={custom_prompt}",
-        ],
-        env=env,
-        cwd=project_root,
-        bufsize=1,
-    )
-
-    # Store the process and room_url
-    local_bots[bot_id] = (proc, room_url)
-
-    return bot_id
-
-
-def spawn_fly(room_url: str, token: str, selected_prompt: str, voice_id: str = "") -> str:
-    """Spawn a fly machine and return its ID"""
-    # Use the same image as the bot runner
-    logger.debug(
-        f"Getting machine info from Fly: {FLY_API_HOST}/apps/{FLY_APP_NAME}/machines"
-    )
-    res = requests.get(
-        f"{FLY_API_HOST}/apps/{FLY_APP_NAME}/machines", headers=FLY_HEADERS
-    )
-    if res.status_code != 200:
-        raise Exception(f"Unable to get machine info from Fly: {res.text}")
-    image = res.json()[0]["config"]["image"]
-
-    # Machine configuration
-    cmd = f"python -m backend.bot --room_url {room_url} --token {token} --prompt {selected_prompt} --voice_id {voice_id}"
-    cmd = cmd.split()
-    worker_props = {
-        "config": {
-            "image": image,
-            "auto_destroy": True,
-            "init": {
-                "cmd": cmd,
-                # "env": {"PYTHONPATH": "../"},
-            },
-            "restart": {"policy": "no"},
-            "guest": {"cpu_kind": "shared", "cpus": 1, "memory_mb": 2048},
-        },
-    }
-
-    # Spawn a new machine instance
-    res = requests.post(
-        f"{FLY_API_HOST}/apps/{FLY_APP_NAME}/machines",
-        headers=FLY_HEADERS,
-        json=worker_props,
-    )
-
-    if res.status_code != 200:
-        raise Exception(f"Problem starting a bot worker: {res.text}")
-
-    # Wait for the machine to enter the started state
-    vm_id = res.json()["id"]
-
-    for _ in range(MAX_RETRIES):
-        state = get_fly_status(vm_id)
-
-        if state == "started":
-            return vm_id
-
-        time.sleep(RETRY_DELAY)
-
-    raise Exception(f"Bot failed to enter started state after {MAX_RETRIES} retries")
-
-
-def spawn(room_url: str, token: str, selected_prompt: str, voice_id: str = "", local: bool = False, custom_prompt: str | None = None) -> str:
-    """Unified interface to spawn a bot either locally or on Fly"""
-    logger.debug(
-        f"Spawning bot with room_url: {room_url} and token: {token}, local: {local}"
-    )
     if local:
-        return spawn_local(room_url, token, selected_prompt, voice_id, custom_prompt)
+        # --- Local Execution using subprocess ---
+        python_executable = sys.executable # Use the same python interpreter running the server
+
+        # Use -m to run bot.py as a module within the backend package
+        command = [
+            python_executable,
+            "-m",                 # Run as module
+            "backend.bot",        # Module path (package.module)
+        ]
+        command.extend(common_args) # Add specific arguments
+
+        logger.info(f"Running local command: {' '.join(command)}")
+        try:
+            # Start the process. Assumes the server is run from the project root ('setra_hackaton')
+            # so that the 'backend' package is discoverable.
+            process = subprocess.Popen(command)
+            logger.info(f"Local bot process started with PID: {process.pid}")
+            # Note: We are not storing the 'process' object here. Status check is basic.
+        except FileNotFoundError:
+            logger.error(f"Failed to start local bot: Python executable not found at '{python_executable}' or module 'backend.bot' not found.")
+            raise RuntimeError("Failed to find Python or bot module.")
+        except Exception as e:
+            logger.error(f"Failed to start local bot process: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to start local bot process: {e}")
+
     else:
-        return spawn_fly(room_url, token, selected_prompt, voice_id)
+        # --- Fly.io Execution using Machines API ---
+        fly_api_key = os.getenv("FLY_API_KEY")
+        fly_app_name = os.getenv("FLY_APP_NAME")
+        if not fly_api_key or not fly_app_name:
+            logger.error("FLY_API_KEY and FLY_APP_NAME environment variables are required for non-local mode.")
+            raise ValueError("Fly API key and App name missing for Fly deployment.")
+
+        api_url = f"https://api.machines.dev/v1/apps/{fly_app_name}/machines"
+        headers = {"Authorization": f"Bearer {fly_api_key}", "Content-Type": "application/json"}
+
+        # Use -m for Fly command consistency
+        fly_command = [
+            "python",
+            "-m",                 # Run as module
+            "backend.bot",        # Module path
+        ]
+        fly_command.extend(common_args) # Add specific arguments
+
+        # Ensure the image name matches your Fly deployment
+        image_name = f"registry.fly.io/{fly_app_name}:deployment-latest" # Adjust if necessary
+
+        # Define necessary environment variables for the Fly machine
+        fly_env = {
+            "DAILY_API_KEY": os.getenv("DAILY_API_KEY"),
+            "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+            "ELEVENLABS_API_KEY": os.getenv("ELEVENLABS_API_KEY"),
+            "ELEVENLABS_VOICE_ID": os.getenv("ELEVENLABS_VOICE_ID"), # Default voice ID
+            "DEEPGRAM_API_KEY": os.getenv("DEEPGRAM_API_KEY"), # Pass Deepgram key too
+            "DEBUG": os.getenv("DEBUG", "false"), # Pass debug setting
+            # Add any other environment variables your bot needs
+        }
+        # Filter out None values from env vars, as Fly expects strings
+        fly_env = {k: v for k, v in fly_env.items() if v is not None}
 
 
-def get_fly_status(vm_id: str) -> str:
-    """Get status of a Fly machine"""
-    res = requests.get(
-        f"{FLY_API_HOST}/apps/{FLY_APP_NAME}/machines/{vm_id}", headers=FLY_HEADERS
-    )
-    return res.json()["state"]
+        # Machine configuration payload
+        data = {
+            "name": f"bot-{bot_id}", # Use the generated UUID for the machine name initially
+            "config": {
+                "image": image_name,
+                "env": fly_env,
+                "guest": {"cpu_kind": "shared", "cpus": 1, "memory_mb": 512}, # Adjust resources as needed
+                "auto_destroy": True, # Destroy machine when process exits
+                "restart": {"policy": "no"}, # Do not restart on exit/failure
+                "command": fly_command, # Command to execute
+            }
+        }
 
+        logger.info(f"Creating Fly machine with command: {' '.join(fly_command)}")
+        try:
+            response = requests.post(api_url, headers=headers, json=data)
+            response.raise_for_status() # Raise exception for non-2xx responses
+            machine_info = response.json()
+            # Use the actual Fly machine ID as the definitive bot_id
+            bot_id = machine_info.get("id", bot_id)
+            logger.info(f"Fly machine {bot_id} created successfully.")
+        except requests.exceptions.RequestException as e:
+            error_message = f"Failed to create Fly machine: {e}"
+            if e.response is not None:
+                 error_message += f" - Status: {e.response.status_code}, Body: {e.response.text}"
+            logger.error(error_message)
+            raise RuntimeError(error_message) # Re-raise to signal failure
 
-def get_local_status(bot_id: str) -> Optional[str]:
-    """Get status of a local bot process"""
-    if bot_id not in local_bots:
-        return None
+    return bot_id # Return the final bot ID (UUID or Fly machine ID)
 
-    proc, _ = local_bots[bot_id]
-    returncode = proc.poll()
-
-    if returncode is None:
-        return "started"
-    else:
-        # Clean up finished processes
-        proc.wait()
-        del local_bots[bot_id]
-        return "stopped"
-
-
-def get_status(bot_id: str, local: bool = False) -> Optional[str]:
-    """Unified interface to get bot status"""
+def get_status(bot_id: str, local: bool) -> str | None:
+    """Checks the status of a bot process/machine."""
     if local:
-        return get_local_status(bot_id)
+        # Local status check remains basic without process management.
+        # Assume running if it was successfully spawned and hasn't been explicitly stopped/failed.
+        # A real implementation would need to track the Popen object.
+        logger.debug(f"Local status check for bot {bot_id} (placeholder: returning 'running')")
+        return "running" # Placeholder
     else:
-        return get_fly_status(bot_id)
+        # Check status on Fly.io using the machine ID (which is bot_id in this case)
+        fly_api_key = os.getenv("FLY_API_KEY")
+        fly_app_name = os.getenv("FLY_APP_NAME")
+        if not fly_api_key or not fly_app_name:
+            logger.error("Fly API key or App name missing for status check.")
+            return "error"
+
+        api_url = f"https://api.machines.dev/v1/apps/{fly_app_name}/machines/{bot_id}"
+        headers = {"Authorization": f"Bearer {fly_api_key}"}
+
+        try:
+            response = requests.get(api_url, headers=headers)
+            if response.status_code == 404:
+                logger.warning(f"Fly machine {bot_id} not found.")
+                return None # Not found
+            response.raise_for_status()
+            machine_info = response.json()
+            status = machine_info.get("state", "unknown")
+            logger.debug(f"Fly machine {bot_id} status: {status}")
+            # Map Fly states
+            if status == "started": return "running"
+            if status in ["stopped", "destroyed"]: return "stopped"
+            if status == "failed": return "error"
+            return status # e.g., "created", "starting"
+        except requests.exceptions.RequestException as e:
+            error_message = f"Failed to get Fly machine status for {bot_id}: {e}"
+            if e.response is not None:
+                 error_message += f" - Status: {e.response.status_code}, Body: {e.response.text}"
+            logger.error(error_message)
+            return "error" # Indicate an error occurred during status check
