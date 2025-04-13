@@ -300,10 +300,10 @@ export default function App() {
         <Card shadow className="animate-appear max-w-lg">
           <CardHeader>
             <CardTitle className="text-6xl font-extrabold text-primary font-sans tracking-tight">
-              TerifAI
+              Setra
             </CardTitle>
             <CardDescription className="text-2xl font-medium mt-3 font-montserrat">
-              Welcome to the AI Voice-Phishing Experience
+              Welcome to the AI Deep fake simulation
             </CardDescription>
             <div className="flex items-center justify-center gap-2 mt-2">
               <span className="text-sm text-gray-500">built by</span>
@@ -319,8 +319,8 @@ export default function App() {
           <CardContent className="space-y-4">
             <div className="flex flex-col gap-2 bg-primary-50 px-4 py-3 md:p-3 rounded-md">
               <p className="text-base text-pretty">
-                This app showcases how AI can be used to clone voices and impersonate others.
-                By understanding these risks, we can better protect ourselves and others.
+                Demo of voice clonning that can be used to train your employees
+                to detect deep fakes.
               </p>
             </div>
           </CardContent>
@@ -429,7 +429,7 @@ export default function App() {
                 Let's Chat 😊
               </Button>
               <p className="text-xs text-muted-foreground mt-1.5 text-center">
-                1:1 conversation with TerifAI
+                1:1 conversation with Sectra
               </p>
             </div>
             <div className="flex-1">
