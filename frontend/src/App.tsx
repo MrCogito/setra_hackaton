@@ -2,10 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useDaily } from "@daily-co/daily-react";
-import { Ear, AlertCircle } from "lucide-react"; // Added AlertCircle
-import * as DailyJs from "@daily-co/daily-js";
+import { Ear, AlertCircle } from "lucide-react"; // Keep icons
+
+// Import the new background component
+import MatrixBackground from "./components/MatrixBackground";
 
 import deeptrust from "./assets/logos/deeptrust.png";
+import logoSign from "./assets/logos/logo-sign.png";
 import MaintenancePage from "./components/MaintenancePage";
 import Session from "./components/Session";
 import { Configure, PromptSelect } from "./components/Setup";
@@ -13,8 +16,8 @@ import { generateCustomPrompt } from "./components/Setup/CustomPromptGenerator";
 // --- MODIFIED: Import VoiceRecord instead of VoiceUpload ---
 import { VoiceRecord } from "./components/Setup/VoiceRecord";
 // --- END MODIFIED ---
-import { Alert, AlertTitle } from "./components/ui/alert"; // Assuming these exist
-import { Button } from "./components/ui/button";
+import { Alert, AlertTitle} from "./components/ui/alert"; // Will need terminal styling
+import { Button } from "./components/ui/button"; // Will need terminal styling
 import {
   Card,
   CardContent,
@@ -22,10 +25,9 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "./components/ui/card";
-// --- MODIFIED: Remove cloneVoice import from here ---
-import { fetch_create_room, fetch_start_agent } from "./actions"; // cloneVoice is called by VoiceRecord internally
-// --- END MODIFIED ---
+} from "./components/ui/card"; // Will need terminal styling
+import * as DailyJs from "@daily-co/daily-js";
+import { fetch_create_room, fetch_start_agent } from "./actions";
 
 const isMaintenanceMode = import.meta.env.VITE_MAINTENANCE_MODE === "true";
 
@@ -48,6 +50,33 @@ const roomQs = new URLSearchParams(window.location.search).get("room_url");
 const isOpenMic = !!parseInt(import.meta.env.VITE_OPEN_MIC);
 const defaultVoiceId = import.meta.env.VITE_DEFAULT_ELEVENLABS_VOICE_ID || "";
 
+// --- Terminal Card Base Styles ---
+// Sharp corners, black background, green border, mono font
+const terminalCardBaseStyles = `
+  bg-black/80 backdrop-blur-sm border border-matrix-green/50 rounded-none shadow-lg
+  text-matrix-green-light font-mono w-full max-w-xl mx-4
+  transition-colors duration-200 ease-in-out /* Keep subtle transitions */
+`;
+
+// --- Terminal Button Styles ---
+const terminalButtonBaseStyles = `
+  border border-matrix-green/70 text-matrix-green hover:bg-matrix-green/10
+  hover:border-matrix-green hover:text-matrix-green-light
+  focus:outline-none focus:ring-2 focus:ring-matrix-green focus:ring-offset-2 focus:ring-offset-black
+  px-4 py-2 rounded-none text-sm uppercase tracking-wider font-medium transition-colors duration-150
+  disabled:opacity-50 disabled:cursor-not-allowed disabled:border-gray-600 disabled:text-gray-500 disabled:bg-transparent
+`;
+const terminalButtonPrimaryStyles = `
+  bg-matrix-green/80 border-matrix-green/90 text-black font-semibold
+  hover:bg-matrix-green hover:text-black
+  ${terminalButtonBaseStyles}
+`;
+const terminalButtonGhostStyles = `
+  border-transparent text-matrix-green-light hover:bg-matrix-green/10 hover:text-matrix-green
+  px-2 py-1 text-xs
+  ${terminalButtonBaseStyles}
+`;
+
 export default function App() {
   const daily = useDaily();
 
@@ -56,14 +85,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [startAudioOff, setStartAudioOff] = useState<boolean>(false);
   const [roomUrl] = useState<string | null>(roomQs || null);
-  // --- MODIFIED: Remove voiceFile state ---
-  // const [voiceFile, setVoiceFile] = useState<File | null>(null);
-  // --- END MODIFIED ---
   // --- MODIFIED: Keep clonedVoiceId state (updated by VoiceRecord) ---
   const [clonedVoiceId, setClonedVoiceId] = useState<string | null>(null);
-  // --- END MODIFIED ---
-  // --- MODIFIED: Remove isCloning state ---
-  // const [isCloning, setIsCloning] = useState(false);
   // --- END MODIFIED ---
   const [customScenario, setCustomScenario] = useState("");
   const [generatedPrompt, setGeneratedPrompt] = useState("");
@@ -83,7 +106,7 @@ export default function App() {
 
   async function start(selectedPromptKey: string, joinCallAndRedirect: boolean) {
     if (selectedPromptKey === 'custom' && !customScenario.trim()) {
-      setCustomError("Please enter a scenario before continuing");
+      setCustomError(">>> Error: Please enter a scenario before continuing"); // Terminal style error
       return;
     }
     setCustomError(null);
@@ -101,7 +124,7 @@ export default function App() {
         console.log("Custom prompt generated:", finalCustomPromptContent);
       } catch (e: any) {
         console.error("Prompt generation failed:", e);
-        setError(`Failed to generate custom prompt: ${e.message || 'Unknown error'}`);
+        setError(`>>> Error: Failed to generate custom prompt: ${e.message || 'Unknown error'}`);
         setState("error");
         setIsGeneratingPrompt(false);
         return;
@@ -111,7 +134,7 @@ export default function App() {
     }
 
     if (!daily || (!serverUrl && !roomUrl)) {
-         setError("Configuration error: Server URL or Room URL missing.");
+         setError(">>> Error: Configuration error: Server URL or Room URL missing.");
          setState("error");
          return;
     }
@@ -120,11 +143,6 @@ export default function App() {
     // Voice cloning happens inside VoiceRecord component now
     const voiceIdToUse = clonedVoiceId || null;
     console.log(`Starting agent with Voice ID: ${voiceIdToUse} (Cloned: ${!!clonedVoiceId}, Default Env: ${defaultVoiceId})`);
-    // --- END MODIFIED ---
-
-    // --- MODIFIED: Remove direct cloning logic ---
-    // let cloneResult = ""; // No longer needed
-    // if (voiceFile) { ... } // This block is removed
     // --- END MODIFIED ---
 
     let agentStartData;
@@ -153,25 +171,16 @@ export default function App() {
           throw new Error(agentStartData.detail || "Failed to start the AI agent.");
         }
 
-        // --- REMOVED: Redundant state transition and redirect logic here ---
-        // This was causing issues, moved after daily.join
-        // if (redirect) {
-        //   window.location.href = config.room_url;
-        // } else {
-        //   setState("connected");
-        // }
-        // --- END REMOVED ---
-
       } catch (e: any) {
         console.error("Error during agent start/config fetch:", e);
-        setError(`Unable to start agent or fetch config: ${e.message || 'Check server status.'}`);
+        setError(`>>> Error: Unable to start agent or fetch config: ${e.message || 'Check server status.'}`);
         setState("error");
         return;
       }
     } else {
       // Manual room entry handling
       if (!roomUrl) {
-          setError("Manual room entry requires a room_url query parameter.");
+          setError(">>> Error: Manual room entry requires a room_url query parameter.");
           setState("error");
           return;
       }
@@ -187,7 +196,7 @@ export default function App() {
     // *** END FIX ***
 
     if (!joinUrl) {
-        setError("No room URL available to join.");
+        setError(">>> Error: No room URL available to join.");
         setState("error");
         return;
     }
@@ -216,7 +225,7 @@ export default function App() {
 
     } catch (e: any) {
       console.error("Failed to join Daily room:", e);
-       let joinError = `Unable to join room: '${joinUrl}'. ${e.message || 'Check network or room status.'}`;
+       let joinError = `>>> Error: Unable to join room: '${joinUrl}'. ${e.message || 'Check network or room status.'}`;
       if (e.message && (e.message.toLowerCase().includes('token') || e.message.toLowerCase().includes('auth'))) {
           joinError += " This might be due to an invalid or missing token."
       }
@@ -249,256 +258,268 @@ export default function App() {
   }
 
   // --- RENDER LOGIC ---
+  const renderContent = () => {
+    if (isMaintenanceMode) {
+      // Apply terminal styling if MaintenancePage allows className
+      return <MaintenancePage className="font-mono text-matrix-green" />;
+    }
 
-  if (isMaintenanceMode) {
-    return <MaintenancePage />;
-  }
-
-  if (state === "error") {
-    // Using the error display structure from your original code
-    return (
+    if (state === "error") {
+      return (
         <div className="flex items-center justify-center min-h-screen p-4">
-             <Card className="max-w-md w-full">
-                 <CardHeader>
-                     <CardTitle className="text-center text-red-600">Error</CardTitle>
-                 </CardHeader>
-                 <CardContent>
-                    <Alert variant="destructive">
-                       {/* Render icon conditionally if available */}
-                       {typeof AlertCircle !== 'undefined' && <AlertCircle className="h-4 w-4"/>}
-                       <AlertTitle className="font-bold">An error occurred</AlertTitle>
-                       <AlertDescription>{error || "An unknown error occurred. Please try again."}</AlertDescription>
-                    </Alert>
-                 </CardContent>
-                 <CardFooter className="flex flex-col gap-2">
-                    <Button onClick={() => window.location.reload()} className="w-full">
-                        Reload Page
-                    </Button>
-                     <Button variant="outline" onClick={leave} className="w-full">
-                        Back to Start
-                    </Button>
-                 </CardFooter>
-             </Card>
+          <Card className={`${terminalCardBaseStyles} max-w-md w-full border-red-500`}>
+            <CardHeader>
+              <CardTitle className="text-center text-red-400 uppercase tracking-wider">SYSTEM ERROR</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Alert variant="destructive" className="bg-black/60 border border-red-500/50">
+                {typeof AlertCircle !== 'undefined' && <AlertCircle className="h-4 w-4 text-red-400"/>}
+                <AlertTitle className="font-bold text-red-400">Terminal Error Detected</AlertTitle>
+                <AlertDescription className="text-red-300 font-mono">{error || ">>> Error: An unknown error occurred. Please try again."}</AlertDescription>
+              </Alert>
+            </CardContent>
+            <CardFooter className="flex flex-col gap-2 border-t border-matrix-green/30 pt-4">
+              <Button onClick={() => window.location.reload()} className={`${terminalButtonBaseStyles} w-full border-red-400 text-red-400`}>
+                &gt; System.Reload()
+              </Button>
+              <Button variant="outline" onClick={leave} className={`${terminalButtonGhostStyles} w-full text-matrix-green-light`}>
+                &lt; Return.To.Start()
+              </Button>
+            </CardFooter>
+          </Card>
         </div>
-    );
-  }
+      );
+    }
 
-  if (state === "connected") {
-    return (
-      <Session
-        onLeave={leave}
-        openMic={isOpenMic}
-        startAudioOff={startAudioOff}
-      />
-    );
-  }
+    if (state === "connected") {
+      return (
+        <Session
+          onLeave={leave}
+          openMic={isOpenMic}
+          startAudioOff={startAudioOff}
+          // Pass theme-related props if Session component supports it
+          className="font-mono text-matrix-green"
+        />
+      );
+    }
 
-  if (state === "intro") {
-    // Using the intro structure from your original code
-    return (
-      <div className="flex items-center justify-center min-h-screen p-4">
-        <Card shadow className="animate-appear max-w-lg">
-          <CardHeader>
-            <CardTitle className="text-6xl font-extrabold text-primary font-sans tracking-tight">
-              Setra
+    if (state === "intro") {
+      return (
+        <Card className={`${terminalCardBaseStyles} animate-appear`}>
+          <CardHeader className="text-center border-b border-matrix-green/30 pb-4">
+            <CardTitle className="text-4xl md:text-5xl font-bold text-matrix-green uppercase tracking-widest">
+              sentra.ai
             </CardTitle>
-            <CardDescription className="text-2xl font-medium mt-3 font-montserrat">
-              Welcome to the AI Deep fake simulation
+            <CardDescription className="text-lg md:text-xl font-medium mt-2 text-matrix-green-light lowercase">
+              // DeepFake Security Training Simulation //
             </CardDescription>
-            <div className="flex items-center justify-center gap-2 mt-2">
-              <span className="text-sm text-gray-500">built by</span>
+            <div className="flex items-center justify-center gap-2 mt-4">
+              <span className="text-xs text-matrix-green/70">// built_by:</span>
               <a
                 href="https://www.deeptrust.ai"
                 target="_blank"
                 rel="noopener noreferrer"
+                className="opacity-80 hover:opacity-100 transition-opacity"
               >
-                <img src={deeptrust} alt="Deeptrust Logo" className="h-4 w-auto" />
+                <img src={logoSign} alt="Sentra Logo" className="h-3 w-auto" />
               </a>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col gap-2 bg-primary-50 px-4 py-3 md:p-3 rounded-md">
-              <p className="text-base text-pretty">
-                Demo of voice clonning that can be used to train your employees
-                to detect deep fakes.
+          <CardContent className="space-y-4 pt-6 text-sm">
+            <div className="flex flex-col gap-2 bg-matrix-green/5 p-3 border border-matrix-green/20">
+              <p className="text-pretty text-matrix-green-light">
+                <span className="text-matrix-green font-semibold">MISSION:</span> Democratize deepfake awareness. Provide SOTA security training accessible and engaging for individuals, businesses, and organizations to defend against the frontier of digital threats.
               </p>
             </div>
+            <p className="text-xs text-center text-matrix-green/60">
+              [System Ready] Press START to initialize...
+            </p>
           </CardContent>
-          <CardFooter>
+          <CardFooter className="border-t border-matrix-green/30 pt-4">
             <Button
               fullWidthMobile
               size="lg"
+              className={`${terminalButtonPrimaryStyles} w-full`}
               onClick={() => setState("configuring_step1")}
             >
-              Let's Get Started! →
+              &gt; Start Initialization
             </Button>
           </CardFooter>
         </Card>
+      );
+    }
+
+    if (state === "configuring_step1") {
+      return (
+        <Card className={`${terminalCardBaseStyles} animate-appear`}>
+          <CardHeader className="relative border-b border-matrix-green/30 pb-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              className={`${terminalButtonGhostStyles} absolute left-2 top-2`}
+              onClick={() => setState("intro")}
+            >
+              &lt; Back
+            </Button>
+            <div className="space-y-1 pt-8 text-center md:text-left">
+              <CardTitle className="text-xl font-semibold text-matrix-green uppercase">
+                Step 1: Device Configuration
+              </CardTitle>
+              <CardDescription className="text-matrix-green-light lowercase">
+                // Configure microphone and speakers //
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-5 pt-6">
+            <div className="flex flex-row gap-2 bg-matrix-green/5 px-3 py-2 border border-matrix-green/20 text-xs items-center justify-center font-medium text-pretty text-matrix-green-light">
+              <Ear className="size-4 text-matrix-green shrink-0" /> Optimal performance requires: quiet environment &amp; stable connection.
+            </div>
+            <Configure
+              startAudioOff={startAudioOff}
+              handleStartAudioOff={() => setStartAudioOff(!startAudioOff)}
+              className="font-mono text-matrix-green"
+            />
+          </CardContent>
+          <CardFooter className="border-t border-matrix-green/30 pt-4">
+            <Button
+              fullWidthMobile
+              className={`${terminalButtonPrimaryStyles} w-full`}
+              onClick={() => setState("configuring_step2")}
+            >
+              Next &gt;
+            </Button>
+          </CardFooter>
+        </Card>
+      );
+    }
+
+    if (state === "configuring_step2") {
+      return (
+        <Card className={`${terminalCardBaseStyles} animate-appear`}>
+          <CardHeader className="relative border-b border-matrix-green/30 pb-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              className={`${terminalButtonGhostStyles} absolute left-2 top-2`}
+              onClick={() => setState("configuring_step1")}
+            >
+              &lt; Back
+            </Button>
+            <div className="space-y-1 pt-8 text-center md:text-left">
+              <CardTitle className="text-xl font-semibold text-matrix-green uppercase">
+                Step 2: Bot Behavior Customization
+              </CardTitle>
+              <CardDescription className="text-matrix-green-light lowercase">
+                // Define interaction parameters //
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6 pt-6">
+            <VoiceRecord
+              onVoiceCloned={handleVoiceCloned}
+              serverUrl={serverUrl}
+              className="font-mono text-matrix-green"
+            />
+            <div className="space-y-2">
+              <PromptSelect
+                selectedSetting={selectedPrompt}
+                onSettingChange={setSelectedPrompt}
+                onCustomPromptChange={setCustomScenario}
+                customScenarioValue={customScenario}
+                error={customError}
+                className="font-mono text-matrix-green"
+              />
+            </div>
+          </CardContent>
+          <CardFooter className="flex flex-col gap-4 border-t border-matrix-green/30 pt-4">
+            <div className="flex flex-col sm:flex-row gap-3 w-full">
+              <div className="flex-1 flex flex-col items-center">
+                <Button
+                  fullWidthMobile
+                  size="lg"
+                  className={`${terminalButtonBaseStyles} w-full bg-matrix-green/10`}
+                  onClick={() => start(selectedPrompt, false)}
+                  disabled={isGeneratingPrompt || (selectedPrompt === 'custom' && !customScenario.trim())}
+                >
+                  Chat 1:1 [TerifAI]
+                </Button>
+                <p className="text-xs text-matrix-green/60 mt-1.5 text-center">// Private Session //</p>
+              </div>
+              <div className="flex-1 flex flex-col items-center">
+                <Button
+                  fullWidthMobile
+                  size="lg"
+                  className={`${terminalButtonBaseStyles} w-full bg-matrix-green/10`}
+                  onClick={() => start(selectedPrompt, true)}
+                  disabled={!clonedVoiceId || isGeneratingPrompt || (selectedPrompt === 'custom' && !customScenario.trim())}
+                >
+                  Join Call [Video Enabled]
+                </Button>
+                <p className="text-xs text-matrix-green/60 mt-1.5 text-center">
+                  {clonedVoiceId
+                    ? "// Voice Clone Ready //"
+                    : "// Requires Voice Recording //"}
+                </p>
+              </div>
+            </div>
+            {selectedPrompt === 'custom' && !customScenario.trim() && (
+              <p className="text-xs text-yellow-400 text-center w-full">
+                &gt;&gt;&gt; Warning: Custom scenario required. Input above.
+              </p>
+            )}
+          </CardFooter>
+        </Card>
+      );
+    }
+
+    // Loading state (using structure from original code)
+    if (state === "requesting_agent" || state === "connecting") {
+      let loadingMessage = "System Initializing...";
+      if (isGeneratingPrompt) loadingMessage = "Generating Custom Prompt...";
+      else if (state === "requesting_agent") loadingMessage = "Initializing AI Assistant...";
+      else if (state === "connecting") loadingMessage = "Establishing Connection...";
+
+      return (
+        <Card className={`${terminalCardBaseStyles} animate-appear`}>
+          <CardContent className="flex flex-col items-center justify-center py-10 gap-4 text-center">
+            <div className="h-6 w-3 bg-matrix-green animate-blink mb-2"></div>
+            
+            <div className="text-lg font-medium text-matrix-green uppercase tracking-wider">
+              {loadingMessage}
+            </div>
+            
+            {isGeneratingPrompt && generatedPrompt && (
+              <div className="max-w-md w-full p-3 mt-2 bg-matrix-green/5 border border-matrix-green/20 text-left">
+                <p className="text-xs font-semibold mb-2 text-matrix-green">// Generated Scenario Preview:</p>
+                <p className="text-xs text-matrix-green-light whitespace-pre-wrap">
+                  {generatedPrompt.substring(0,200)}{generatedPrompt.length > 200 ? '...' : ''}
+                </p>
+              </div>
+            )}
+            
+            <CardDescription className="text-sm text-matrix-green/70 lowercase">
+              {isGeneratingPrompt
+                ? "// Crafting unique interaction parameters... Stand by... //"
+                : "// Network traffic dependent. May take 1-2 minutes... //"}
+            </CardDescription>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    // Fallback rendering
+    return (
+      <div className="flex items-center justify-center min-h-screen text-matrix-green font-mono">
+        &gt;&gt;&gt; Unhandled application state: {state}
       </div>
     );
-  }
+  };
 
-  if (state === "configuring_step1") {
-    // Using the config step 1 structure from your original code
-    return (
-      <Card shadow className="animate-appear max-w-lg">
-        <CardHeader className="relative space-y-6">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="absolute left-4 top-4 text-muted-foreground hover:text-foreground hover:bg-gray-50"
-            onClick={() => setState("intro")}
-          >
-            ← Back
-          </Button>
-          <div className="space-y-1.5 pt-6">
-            <CardTitle>Configure your devices</CardTitle>
-            <CardDescription>
-              Please configure your microphone and speakers below
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent stack>
-          <div className="flex flex-row gap-2 bg-primary-50 px-4 py-2 md:p-2 text-sm items-center justify-center rounded-md font-medium text-pretty">
-            <Ear className="size-7 md:size-5 text-primary-400" />
-            Works best in a quiet environment with a good internet.
-          </div>
-          <Configure
-            startAudioOff={startAudioOff}
-            handleStartAudioOff={() => setStartAudioOff(!startAudioOff)}
-          />
-        </CardContent>
-        <CardFooter>
-          <Button
-            fullWidthMobile
-            onClick={() => setState("configuring_step2")}
-          >
-            Next
-          </Button>
-        </CardFooter>
-      </Card>
-    );
-  }
-
-  if (state === "configuring_step2") {
-    // Using the config step 2 structure from your original code
-    return (
-      <Card shadow className="animate-appear max-w-lg">
-        <CardHeader className="relative space-y-6">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="absolute left-4 top-4 text-muted-foreground hover:text-foreground hover:bg-gray-50"
-            onClick={() => setState("configuring_step1")}
-          >
-            ← Back
-          </Button>
-          <div className="space-y-1.5 pt-6">
-            <CardTitle>Customize Bot Behavior</CardTitle>
-            <CardDescription>
-              Choose how you want the bot to interact
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* --- MODIFIED: Use VoiceRecord component --- */}
-          <VoiceRecord
-            onVoiceCloned={handleVoiceCloned} // Pass callback
-            serverUrl={serverUrl}             // Pass server URL
-          />
-          {/* --- END MODIFIED --- */}
-          <div className="space-y-2">
-            <PromptSelect
-              selectedSetting={selectedPrompt}
-              onSettingChange={setSelectedPrompt}
-              onCustomPromptChange={setCustomScenario}
-              customScenarioValue={customScenario} // Pass value back to input
-              error={customError}
-            />
-          </div>
-        </CardContent>
-        <CardFooter className="flex flex-col gap-2">
-          <div className="flex gap-3 w-full">
-            <div className="flex-1">
-              <Button
-                fullWidthMobile
-                size="lg"
-                className="w-full"
-                onClick={() => start(selectedPrompt, false)}
-              >
-                Let's Chat 😊
-              </Button>
-              <p className="text-xs text-muted-foreground mt-1.5 text-center">
-                1:1 conversation with Sectra
-              </p>
-            </div>
-            <div className="flex-1">
-              <Button
-                fullWidthMobile
-                size="lg"
-                className="w-full"
-                onClick={() => start(selectedPrompt, true)}
-                // --- MODIFIED: Disable based on clonedVoiceId ---
-                disabled={!clonedVoiceId}
-                // --- END MODIFIED ---
-              >
-                Join Call ☎️
-              </Button>
-              <p className="text-xs text-muted-foreground mt-1.5 text-center">
-                {/* --- MODIFIED: Update text based on clonedVoiceId --- */}
-                {clonedVoiceId
-                    ? "Open video call with your cloned voice"
-                    : "Record voice sample above to enable call with cloned voice"
-                 }
-                 {/* --- END MODIFIED --- */}
-              </p>
-            </div>
-          </div>
-        </CardFooter>
-      </Card>
-    );
-  }
-
-  // Loading state (using structure from original code)
-  // --- MODIFIED: Removed isCloning check ---
-  if (state === "requesting_agent" || state === "connecting") {
-     let loadingMessage = "Please wait...";
-     if (isGeneratingPrompt) loadingMessage = "Generating Custom Prompt...";
-     else if (state === "requesting_agent") loadingMessage = "Starting AI Assistant...";
-     else if (state === "connecting") loadingMessage = "Connecting to call...";
-  // --- END MODIFIED ---
-
-    return (
-      <Card shadow className="animate-appear max-w-lg">
-        <CardContent className="flex flex-col items-center justify-center py-12 gap-4">
-          <div className="mt-8 text-lg font-medium">
-            {/* --- MODIFIED: Simplified loading message logic --- */}
-            {loadingMessage}
-            {/* --- END MODIFIED --- */}
-          </div>
-          {isGeneratingPrompt && generatedPrompt && (
-            <div className="max-w-md w-full p-4 bg-gray-50 rounded-md border">
-               <p className="text-sm font-semibold mb-2 text-gray-600">Generated Scenario Preview:</p> {/* Added heading */}
-              <p className="text-sm text-gray-600 whitespace-pre-wrap">{generatedPrompt.substring(0,200)}{generatedPrompt.length > 200 ? '...' : ''}</p> {/* Truncate preview */}
-            </div>
-          )}
-          <CardDescription className="text-center text-sm text-muted-foreground">
-            {/* --- MODIFIED: Simplified description logic --- */}
-            {isGeneratingPrompt
-              ? "Generating your custom scenario..."
-              : "Depending on traffic, this may take 1 to 2 minutes..."
-            }
-            {/* --- END MODIFIED --- */}
-          </CardDescription>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Fallback rendering
-   return (
-       <div className="flex items-center justify-center min-h-screen">
-           Unhandled application state: {state}
-       </div>
-   );
+  // Main wrapper to center content vertically and horizontally
+  return (
+    <div className="relative flex items-center justify-center min-h-screen w-full p-4 z-10">
+      <MatrixBackground /> {/* Render the background */}
+      {renderContent()}   {/* Render the main UI card */}
+    </div>
+  );
 }
